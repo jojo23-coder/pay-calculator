@@ -1,0 +1,13 @@
+.venv/
+.DS_Store
+
+# Local VS Code state
+.vscode/*
+!.vscode/settings.json
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Local ad hoc outputs
+*.log

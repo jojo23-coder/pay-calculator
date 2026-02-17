@@ -1,0 +1,154 @@
+:root {
+  --bg1: #f7f4ec;
+  --bg2: #d4e9e2;
+  --ink: #1f2a44;
+  --muted: #4d5b7c;
+  --panel: rgba(255, 255, 255, 0.88);
+  --border: rgba(31, 42, 68, 0.16);
+  --accent: #f08a24;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  font-family: "Space Grotesk", sans-serif;
+  background:
+    radial-gradient(circle at 18% 14%, rgba(240, 138, 36, 0.3), transparent 35%),
+    radial-gradient(circle at 85% 82%, rgba(73, 164, 151, 0.3), transparent 40%),
+    linear-gradient(140deg, var(--bg1), var(--bg2));
+}
+
+.layout {
+  max-width: 1300px;
+  margin: 0 auto;
+  padding: 22px;
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 18px;
+}
+
+.panel,
+.chartWrap,
+.methodCard {
+  background: var(--panel);
+  backdrop-filter: blur(3px);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+}
+
+.panel {
+  padding: 20px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.8rem;
+}
+
+.sub {
+  margin: 6px 0 18px;
+  color: var(--muted);
+}
+
+.controls {
+  display: grid;
+  gap: 12px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.92rem;
+}
+
+label span {
+  color: var(--muted);
+}
+
+select,
+input[type="range"] {
+  width: 100%;
+}
+
+select {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: #fff;
+  color: var(--ink);
+  font-family: "Space Grotesk", sans-serif;
+}
+
+output {
+  font-family: "IBM Plex Mono", monospace;
+  color: var(--ink);
+}
+
+.numbers {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  display: grid;
+  gap: 8px;
+}
+
+.numbers div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.numbers span {
+  font-family: "IBM Plex Mono", monospace;
+  color: var(--accent);
+}
+
+.support {
+  margin-top: 16px;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.chartWrap {
+  padding: 8px;
+}
+
+.methodCard {
+  grid-column: 1 / -1;
+  padding: 18px 20px;
+}
+
+.methodCard h2 {
+  margin: 0 0 10px;
+  font-size: 1.2rem;
+}
+
+.methodCard p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.methodCard p:last-child {
+  margin-bottom: 0;
+}
+
+#chart {
+  width: 100%;
+  height: min(78vh, 760px);
+}
+
+@media (max-width: 960px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  #chart {
+    height: min(62vh, 560px);
+  }
+}
