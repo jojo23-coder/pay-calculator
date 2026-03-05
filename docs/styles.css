@@ -193,8 +193,14 @@ output {
   grid-column: 1 / -1;
 }
 
+.popSummaryGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
 .popNumbers {
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  margin-top: 12px;
 }
 
 .populationCharts {
@@ -254,6 +260,10 @@ output {
   }
 
   .popNumbers {
+    grid-template-columns: 1fr;
+  }
+
+  .popSummaryGrid {
     grid-template-columns: 1fr;
   }
 

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./styles.css?v=20260305b" />
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
@@ -103,11 +103,15 @@
       <div class="layout populationLayout">
         <section class="panel popSummary">
           <h1>Beslutsstöd för populationsjämförelse</h1>
-          <div class="numbers popNumbers">
-            <div><strong>Nationellt N</strong><span id="popNNational">-</span></div>
-            <div><strong>Population N</strong><span id="popNPopulation">-</span></div>
-            <div><strong>Median predikterad q50</strong><span id="popMedianPred">-</span></div>
-            <div><strong>Median avvikelse (faktisk - q50)</strong><span id="popMedianGap">-</span></div>
+          <div class="popSummaryGrid">
+            <div class="numbers popNumbers">
+              <div><strong>Nationellt N</strong><span id="popNNational">-</span></div>
+              <div><strong>Population N</strong><span id="popNPopulation">-</span></div>
+            </div>
+            <div class="numbers popNumbers">
+              <div><strong>Median predikterad q50</strong><span id="popMedianPred">-</span></div>
+              <div><strong>Median avvikelse (faktisk - q50)</strong><span id="popMedianGap">-</span></div>
+            </div>
           </div>
           <p id="popMeta" class="support"></p>
           <p id="popUnseen" class="support"></p>
@@ -133,8 +137,8 @@
           </p>
           <p>
             Spridningsdiagrammet sätter populationens faktiska löner mot erfarenhet och jämför med
-            en typisk mediantrend. Boxplotten visar hur avvikelsen (faktisk - predikterad q50)
-            varierar mellan delgrupper.
+            en typisk mediantrend. Avvikelsegrafen visar varje individs avvikelse i procent av
+            predikterad medianlön, så att mönster mellan juniora och seniora blir tydliga.
           </p>
         </section>
         <section class="methodCard">
@@ -158,6 +162,6 @@
     </section>
   </main>
 
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app.js?v=20260305b"></script>
 </body>
 </html>

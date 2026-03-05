@@ -1,12 +1,22 @@
-const [data, populationData] = await Promise.all([
-  fetch("./data/predictions.json").then((r) => {
-    if (!r.ok) throw new Error("Kunde inte läsa ./data/predictions.json");
-    return r.json();
-  }),
-  fetch("./data/population_report.json")
-    .then((r) => (r.ok ? r.json() : null))
-    .catch(() => null),
-]);
+let data;
+let populationData;
+let profiles;
+let byKey;
+let raw;
+let ACTIVE_ROLE;
+
+async function loadData() {
+  const [predictions, population] = await Promise.all([
+    fetch("./data/predictions.json").then((r) => {
+      if (!r.ok) throw new Error("Kunde inte läsa ./data/predictions.json");
+      return r.json();
+    }),
+    fetch("./data/population_report.json")
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null),
+  ]);
+  return { predictions, population };
+}
 
 const els = {
   tabIndivid: document.getElementById("tabIndivid"),
@@ -41,13 +51,6 @@ const els = {
   popBottomPeople: document.getElementById("popBottomPeople"),
   popGroupRankings: document.getElementById("popGroupRankings"),
 };
-
-const profiles = data.profiles;
-const byKey = new Map(
-  profiles.map((p) => [profileKey(p.role, p.workplace, p.specialist, p.phd), p])
-);
-const raw = data.raw_data;
-const ACTIVE_ROLE = data.default_profile.role;
 
 function profileKey(role, workplace, specialist, phd) {
   return [role, workplace, specialist, phd].join("||");
@@ -510,7 +513,6 @@ function renderPopulationView() {
   const meta = populationData.meta;
   const bins = populationData.gap_bins || populationData.percentile_bins || populationData.deciles;
   const scatter = populationData.scatter;
-  const gaps = populationData.gaps;
   const individuals = Array.isArray(populationData.individuals) ? populationData.individuals : [];
   const groupRankings = populationData.group_rankings || {};
 
@@ -675,21 +677,43 @@ function renderPopulationView() {
     { responsive: true, displaylogo: false }
   );
 
-  const gapTraces = Object.entries(gaps.groups).map(([label, vals]) => ({
-    y: vals,
-    name: label,
-    type: "box",
-    boxmean: true,
-    marker: { color: "rgba(49,130,189,0.85)" },
-  }));
+  const devPct = sortedByPct.map((p) =>
+    p.pred_q50 > 0 ? (100.0 * p.gap_actual_minus_pred50) / p.pred_q50 : 0
+  );
   Plotly.react(
     els.popChartGap,
-    gapTraces,
-    populationPlotLayout(
-      `Avvikelse per delgrupp (${gaps.group_column})`,
-      "Faktisk - predikterad q50 (kr/mån)",
-      gaps.group_column
-    ),
+    [
+      {
+        x: sortedByPct.map((p) => p.years),
+        y: devPct,
+        mode: "markers",
+        name: "Individ",
+        marker: { color: "rgba(49,130,189,0.9)", size: 9, line: { color: "#fff", width: 1 } },
+        text: sortedByPct.map((p) => `Person ${p.id}`),
+        customdata: sortedByPct.map((p, i) => [p.gap_actual_minus_pred50, p.pred_q50, devPct[i]]),
+        hovertemplate:
+          "%{text}<br>Erfarenhet: %{x:.1f} år<br>" +
+          "Avvikelse: %{customdata[2]:.1f}%<br>" +
+          "Gap: %{customdata[0]:,.0f} kr/mån<br>" +
+          "Pred q50: %{customdata[1]:,.0f} kr/mån<extra></extra>",
+      },
+    ],
+    {
+      ...populationPlotLayout(
+        "Avvikelse mot predikterad median (%) per individ",
+        "Avvikelse i % av predikterad q50",
+        "Erfarenhet (år)"
+      ),
+      yaxis: {
+        title: "Avvikelse i % av predikterad q50",
+        ticksuffix: "%",
+        showgrid: true,
+        gridcolor: "rgba(0,0,0,0.08)",
+        zeroline: true,
+        zerolinecolor: "rgba(214,39,40,0.9)",
+        zerolinewidth: 2,
+      },
+    },
     { responsive: true, displaylogo: false }
   );
 
@@ -745,7 +769,17 @@ function setTab(tab) {
   }
 }
 
-function init() {
+async function init() {
+  const loaded = await loadData();
+  data = loaded.predictions;
+  populationData = loaded.population;
+  profiles = data.profiles;
+  byKey = new Map(
+    profiles.map((p) => [profileKey(p.role, p.workplace, p.specialist, p.phd), p])
+  );
+  raw = data.raw_data;
+  ACTIVE_ROLE = data.default_profile.role;
+
   fillSelect(els.workplace, data.options.workplace);
   fillSelect(els.specialist, data.options.specialist);
   fillSelect(els.phd, data.options.phd);
@@ -776,4 +810,8 @@ function init() {
   els.tabPopulation.addEventListener("click", () => setTab("population"));
 }
 
-init();
+init().catch((err) => {
+  console.error(err);
+  els.supportInfo.textContent =
+    "Kunde inte ladda data till sidan. Kontrollera att JSON-filerna finns i docs/data och ladda om sidan.";
+});
