@@ -193,6 +193,14 @@ output {
   grid-column: 1 / -1;
 }
 
+.popDatasetRow {
+  margin-top: 10px;
+}
+
+.popDatasetRow label {
+  max-width: 280px;
+}
+
 .popSummaryGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -4,18 +4,44 @@ let profiles;
 let byKey;
 let raw;
 let ACTIVE_ROLE;
+let currentPopulationKey = "random";
+const populationCache = new Map();
+
+const POPULATION_SOURCES = {
+  random: "./data/population_random.json",
+  umea: "./data/population_umea.json",
+  default: "./data/population_report.json",
+};
 
 async function loadData() {
-  const [predictions, population] = await Promise.all([
-    fetch("./data/predictions.json").then((r) => {
-      if (!r.ok) throw new Error("Kunde inte läsa ./data/predictions.json");
-      return r.json();
-    }),
-    fetch("./data/population_report.json")
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null),
-  ]);
-  return { predictions, population };
+  const predictions = await fetch("./data/predictions.json").then((r) => {
+    if (!r.ok) throw new Error("Kunde inte läsa ./data/predictions.json");
+    return r.json();
+  });
+  return { predictions };
+}
+
+async function loadPopulationDataset(key) {
+  const resolved = POPULATION_SOURCES[key] ? key : "random";
+  if (populationCache.has(resolved)) return populationCache.get(resolved);
+  const primary = POPULATION_SOURCES[resolved];
+  const fallback = POPULATION_SOURCES.default;
+  const response = await fetch(primary);
+  if (!response.ok) {
+    if (resolved !== "default") {
+      const fallbackResp = await fetch(fallback);
+      if (!fallbackResp.ok) {
+        throw new Error(`Kunde inte läsa ${primary} eller ${fallback}`);
+      }
+      const fallbackData = await fallbackResp.json();
+      populationCache.set(resolved, fallbackData);
+      return fallbackData;
+    }
+    throw new Error(`Kunde inte läsa ${primary}`);
+  }
+  const parsed = await response.json();
+  populationCache.set(resolved, parsed);
+  return parsed;
 }
 
 const els = {
@@ -38,6 +64,7 @@ const els = {
   chart: document.getElementById("chart"),
 
   popNNational: document.getElementById("popNNational"),
+  popDataset: document.getElementById("popDataset"),
   popNPopulation: document.getElementById("popNPopulation"),
   popMedianPred: document.getElementById("popMedianPred"),
   popMedianGap: document.getElementById("popMedianGap"),
@@ -505,7 +532,7 @@ function populationPlotLayout(title, yTitle, xTitle = "") {
 
 function renderPopulationView() {
   if (!populationData) {
-    els.popMeta.textContent = "Kunde inte läsa ./data/population_report.json. Kör export-skriptet för att generera populationsunderlag.";
+    els.popMeta.textContent = "Kunde inte läsa populationsunderlag. Kontrollera JSON-filer i docs/data.";
     return;
   }
 
@@ -755,6 +782,19 @@ function renderPopulationView() {
   els.popGroupRankings.innerHTML = rankingSections.join("");
 }
 
+async function switchPopulationDataset(key) {
+  els.popMeta.textContent = "Laddar population...";
+  try {
+    currentPopulationKey = POPULATION_SOURCES[key] ? key : "random";
+    populationData = await loadPopulationDataset(currentPopulationKey);
+    renderPopulationView();
+  } catch (err) {
+    console.error(err);
+    populationData = null;
+    renderPopulationView();
+  }
+}
+
 function setTab(tab) {
   const isIndivid = tab === "individ";
   els.tabIndivid.classList.toggle("is-active", isIndivid);
@@ -765,14 +805,13 @@ function setTab(tab) {
   if (isIndivid) {
     updateIndividualView();
   } else {
-    renderPopulationView();
+    void switchPopulationDataset(els.popDataset.value || currentPopulationKey);
   }
 }
 
 async function init() {
   const loaded = await loadData();
   data = loaded.predictions;
-  populationData = loaded.population;
   profiles = data.profiles;
   byKey = new Map(
     profiles.map((p) => [profileKey(p.role, p.workplace, p.specialist, p.phd), p])
@@ -808,6 +847,11 @@ async function init() {
 
   els.tabIndivid.addEventListener("click", () => setTab("individ"));
   els.tabPopulation.addEventListener("click", () => setTab("population"));
+  els.popDataset.addEventListener("change", () => {
+    if (els.viewPopulation.classList.contains("is-active")) {
+      void switchPopulationDataset(els.popDataset.value || "random");
+    }
+  });
 }
 
 init().catch((err) => {

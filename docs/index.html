@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./styles.css?v=20260305b" />
+  <link rel="stylesheet" href="./styles.css?v=20260305c" />
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
@@ -103,6 +103,15 @@
       <div class="layout populationLayout">
         <section class="panel popSummary">
           <h1>Beslutsstöd för populationsjämförelse</h1>
+          <div class="popDatasetRow">
+            <label>
+              <span>Population</span>
+              <select id="popDataset">
+                <option value="random">Slumpad population</option>
+                <option value="umea">Umeå</option>
+              </select>
+            </label>
+          </div>
           <div class="popSummaryGrid">
             <div class="numbers popNumbers">
               <div><strong>Nationellt N</strong><span id="popNNational">-</span></div>
@@ -162,6 +171,6 @@
     </section>
   </main>
 
-  <script type="module" src="./app.js?v=20260305b"></script>
+  <script type="module" src="./app.js?v=20260305c"></script>
 </body>
 </html>
