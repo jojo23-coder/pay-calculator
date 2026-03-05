@@ -24,6 +24,7 @@ COL_SALARY = "Månadslön"
 Q_LOW = 0.10
 Q_MED = 0.50
 Q_HIGH = 0.90
+EXTRA_QUANTILES = (0.20, 0.30, 0.40, 0.60, 0.70, 0.80)
 
 SPLINE_DF = 4
 SPLINE_DEGREE = 3
@@ -123,9 +124,14 @@ def design_matrix(
     return x.loc[mask].astype(float), y_log.loc[mask].astype(float)
 
 
-def fit_quantile_models(x: pd.DataFrame, y_log: pd.Series) -> dict[float, object]:
+def fit_quantile_models(
+    x: pd.DataFrame,
+    y_log: pd.Series,
+    quantiles: tuple[float, ...] | list[float] | None = None,
+) -> dict[float, object]:
+    qs = tuple(quantiles) if quantiles is not None else (Q_LOW, Q_MED, Q_HIGH)
     models = {}
-    for q in (Q_LOW, Q_MED, Q_HIGH):
+    for q in qs:
         models[q] = sm.QuantReg(y_log, x).fit(q=q, max_iter=QUANTREG_MAX_ITER, p_tol=QUANTREG_P_TOL)
     return models
 
@@ -381,10 +387,11 @@ def main() -> None:
     ).fit(df[COL_YEARS])
 
     x, y_log = design_matrix(df, categories_reference=ref_cats, spline_basis=spline)
+    export_quantiles = tuple(sorted(set((Q_LOW, Q_MED, Q_HIGH, *EXTRA_QUANTILES))))
     if args.fit_method == "constrained":
         models = fit_quantile_models_constrained(x, y_log)
     else:
-        models = fit_quantile_models(x, y_log)
+        models = fit_quantile_models(x, y_log, quantiles=export_quantiles)
 
     def unique_sorted_str(series: pd.Series) -> list[str]:
         vals = [str(v).strip() for v in series.dropna().tolist()]
@@ -438,7 +445,7 @@ def main() -> None:
             if args.fit_method == "constrained":
                 mb = fit_quantile_models_constrained(xb, yb)
             else:
-                mb = fit_quantile_models(xb, yb)
+                mb = fit_quantile_models(xb, yb, quantiles=export_quantiles)
         except Exception:
             continue
         for p in profile_list:
@@ -456,6 +463,12 @@ def main() -> None:
         q50 = np.exp(predict_log_quantile(models[Q_MED], xg, args.fit_method))
         q90 = np.exp(predict_log_quantile(models[Q_HIGH], xg, args.fit_method))
         q10, q50, q90 = enforce_quantile_order(q10, q50, q90)
+        extra_quantiles: dict[str, list[float]] = {}
+        for q in EXTRA_QUANTILES:
+            if q in models:
+                q_vals = np.exp(predict_log_quantile(models[q], xg, args.fit_method))
+                q_vals = np.clip(q_vals, q10, q90)
+                extra_quantiles[f"q{int(round(q * 100))}"] = np.round(q_vals, 2).tolist()
         support, peer_indices, support_desc = local_support_curve(
             df=df,
             profile=profile,
@@ -487,6 +500,7 @@ def main() -> None:
                     "q10": np.round(q10, 2).tolist(),
                     "q50": np.round(q50, 2).tolist(),
                     "q90": np.round(q90, 2).tolist(),
+                    "extra_quantiles": extra_quantiles,
                     "support": np.round(support, 3).tolist(),
                 },
                 "bootstrap": {
@@ -504,6 +518,7 @@ def main() -> None:
             "rows_after_cleaning": int(len(df)),
             "fit_method": args.fit_method,
             "quantiles": {"low": Q_LOW, "med": Q_MED, "high": Q_HIGH},
+            "extra_quantiles": [float(q) for q in EXTRA_QUANTILES],
             "quantile_postprocess": "median_preserving_non_crossing",
             "bootstrap": {
                 "reps_requested": int(args.bootstrap_reps),

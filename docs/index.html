@@ -11,83 +11,150 @@
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
-  <main class="layout">
-    <section class="panel">
-      <h1>Beslutsstöd för lönestrategi</h1>
-
-      <div class="controls">
-        <label>
-          <span>Arbetsplats</span>
-          <select id="workplace"></select>
-        </label>
-        <label>
-          <span>Specialist eller ST-fysiker?</span>
-          <select id="specialist"></select>
-        </label>
-        <label>
-          <span>Forskarutbildning</span>
-          <select id="phd"></select>
-        </label>
-        <label>
-          <span>Erfarenhet (år)</span>
-          <input id="years" type="range" min="0" max="40" step="0.1" />
-          <output id="yearsValue" for="years"></output>
-        </label>
-        <label>
-          <span>Egen månadslön (valfritt)</span>
-          <input id="actualSalary" type="number" min="0" step="100" placeholder="t.ex. 59700" />
-        </label>
-      </div>
-
-      <div class="numbers">
-        <div>
-          <strong>10e percentil</strong>
-          <span id="q10">-</span>
-        </div>
-        <div>
-          <strong>50e percentil (median)</strong>
-          <span id="q50">-</span>
-        </div>
-        <div>
-          <strong>90e percentil</strong>
-          <span id="q90">-</span>
-        </div>
-        <div>
-          <strong>Jämfört med median</strong>
-          <span id="actualVsMedian">-</span>
-        </div>
-      </div>
-
-      <p id="supportInfo" class="support"></p>
+  <main class="site">
+    <section class="tabsBar">
+      <button id="tabIndivid" class="tabBtn is-active" type="button">Individ</button>
+      <button id="tabPopulation" class="tabBtn" type="button">Population</button>
     </section>
-    <section class="chartWrap">
-      <div id="chart"></div>
+
+    <section id="viewIndivid" class="tabView is-active">
+      <div class="layout">
+        <section class="panel">
+          <h1>Beslutsstöd för lönestrategi</h1>
+
+          <div class="controls">
+            <label>
+              <span>Arbetsplats</span>
+              <select id="workplace"></select>
+            </label>
+            <label>
+              <span>Specialist eller ST-fysiker?</span>
+              <select id="specialist"></select>
+            </label>
+            <label>
+              <span>Forskarutbildning</span>
+              <select id="phd"></select>
+            </label>
+            <label>
+              <span>Erfarenhet (år)</span>
+              <input id="years" type="range" min="0" max="40" step="0.1" />
+              <output id="yearsValue" for="years"></output>
+            </label>
+            <label>
+              <span>Egen månadslön (valfritt)</span>
+              <input id="actualSalary" type="number" min="0" step="100" placeholder="t.ex. 59700" />
+            </label>
+          </div>
+
+          <div class="numbers">
+            <div>
+              <strong>10e percentil</strong>
+              <span id="q10">-</span>
+            </div>
+            <div>
+              <strong>50e percentil (median)</strong>
+              <span id="q50">-</span>
+            </div>
+            <div>
+              <strong>90e percentil</strong>
+              <span id="q90">-</span>
+            </div>
+            <div>
+              <strong>Jämfört med median</strong>
+              <span id="actualVsMedian">-</span>
+            </div>
+          </div>
+
+          <p id="supportInfo" class="support"></p>
+        </section>
+        <section class="chartWrap">
+          <div id="chart"></div>
+        </section>
+        <section class="methodCard">
+          <h2>Hur beräkningen fungerar (enkelt förklarat)</h2>
+          <p>
+            Detta underlag är framtaget för chefer och HR som stöd i
+            lönestrategiska diskussioner. Syftet är att visa hur avdelningens lönenivåer förhåller
+            sig till ett nationellt datamaterial för jämförbara sjukhusfysikerprofiler.
+          </p>
+          <p>
+            Modellen är en <strong>multivariat kvantilregression</strong>. Det betyder att flera
+            faktorer vägs in samtidigt (arbetsplats, specialiststatus, forskarutbildning och
+            erfarenhet i år), och att utfallet visas som percentiler (10/50/90) i stället för ett
+            enda medelvärde. Effekten av erfarenhet modelleras med en <strong>spline</strong>, vilket
+            tillåter en mjuk, icke-linjär utveckling över tid.
+          </p>
+          <p>
+            Den färgade ytan mellan 10e och 90e percentil visar ett sannolikt intervall i
+            referensmaterialet. Färgen i bandet visar lokalt datastöd (antal jämförbara observationer
+            kring en viss erfarenhetsnivå). Mörkare färg betyder starkare stöd i datan.
+          </p>
+          <p>
+            <strong>Bootstrap används</strong> för att uppskatta osäkerhet kring
+            medianprognosen. Vi upprepar modellanpassningen på många olika delmängder av data
+            (resampling), och beräknar ett 95%-intervall. Dessa visas som yttre prickade linjer som
+            kan ses där prognosen är osäker.
+          </p>
+        </section>
+      </div>
     </section>
-    <section class="methodCard">
-      <h2>Hur beräkningen fungerar (enkelt förklarat)</h2>
-      <p>
-        Detta underlag är framtaget för chefer och HR som stöd i
-        lönestrategiska diskussioner. Syftet är att visa hur avdelningens lönenivåer förhåller
-        sig till ett nationellt datamaterial för jämförbara sjukhusfysikerprofiler.
-      </p>
-      <p>
-        Modellen är en <strong>multivariat kvantilregression</strong>. Det betyder att flera
-        faktorer vägs in samtidigt (arbetsplats, specialiststatus, forskarutbildning och
-        erfarenhet i år), och att utfallet visas som percentiler (10/50/90) i stället för ett
-        enda medelvärde. Effekten av erfarenhet modelleras med en <strong>spline</strong>, vilket
-        tillåter en mjuk, icke-linjär utveckling över tid.
-      </p>
-      <p>
-        Den färgade ytan mellan 10e och 90e percentil visar ett sannolikt intervall i
-        referensmaterialet. Färgen i bandet visar lokalt datastöd (antal jämförbara observationer
-        kring en viss erfarenhetsnivå). Mörkare färg betyder starkare stöd i datan.
-      </p>
-      <p>
-        <strong>Bootstrap används</strong> för att uppskatta osäkerhet kring
-        medianprognosen. Vi upprepar modellanpassningen på många olika delmängder av data
-        (resampling), och beräknar ett 95%-intervall. Dessa visas som yttre prickade linjer som
-        kan ses där prognosen är osäker.
-      </p>
+
+    <section id="viewPopulation" class="tabView">
+      <div class="layout populationLayout">
+        <section class="panel popSummary">
+          <h1>Beslutsstöd för populationsjämförelse</h1>
+          <div class="numbers popNumbers">
+            <div><strong>Nationellt N</strong><span id="popNNational">-</span></div>
+            <div><strong>Population N</strong><span id="popNPopulation">-</span></div>
+            <div><strong>Median predikterad q50</strong><span id="popMedianPred">-</span></div>
+            <div><strong>Median avvikelse (faktisk - q50)</strong><span id="popMedianGap">-</span></div>
+          </div>
+          <p id="popMeta" class="support"></p>
+          <p id="popUnseen" class="support"></p>
+        </section>
+
+        <section class="chartWrap populationCharts">
+          <div id="popChartDecile" class="popChart"></div>
+          <div id="popChartEcdf" class="popChart"></div>
+          <div id="popChartScatter" class="popChart"></div>
+          <div id="popChartGap" class="popChart"></div>
+        </section>
+
+        <section class="methodCard">
+          <h2>Hur populationsjämförelsen ska läsas</h2>
+          <p>
+            Population-vyn visar om gruppen sammantaget ligger lågt, centralt eller högt i
+            fördelningen av nationellt predikterade löner för jämförbara profiler.
+          </p>
+          <p>
+            Histogrammet visar hur många personer som ligger i olika lönegap-intervall jämfört med
+            sin predikterade medianlön (q50). Percentilgrafen visar varje individs nationella
+            placering utifrån predikterad medianlön, samt gruppens medianpercentil.
+          </p>
+          <p>
+            Spridningsdiagrammet sätter populationens faktiska löner mot erfarenhet och jämför med
+            en typisk mediantrend. Boxplotten visar hur avvikelsen (faktisk - predikterad q50)
+            varierar mellan delgrupper.
+          </p>
+        </section>
+        <section class="methodCard">
+          <h2>Vem rankas högt eller lågt?</h2>
+          <div class="popRankGrid">
+            <div>
+              <h3>Högst predikterad percentil</h3>
+              <ul id="popTopPeople" class="rankList"></ul>
+            </div>
+            <div>
+              <h3>Lägst predikterad percentil</h3>
+              <ul id="popBottomPeople" class="rankList"></ul>
+            </div>
+            <div>
+              <h3>Gruppnivå: högt till lågt</h3>
+              <div id="popGroupRankings" class="rankGroups"></div>
+            </div>
+          </div>
+        </section>
+      </div>
     </section>
   </main>
 

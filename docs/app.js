@@ -1,9 +1,19 @@
-const data = await fetch("./data/predictions.json").then((r) => {
-  if (!r.ok) throw new Error("Kunde inte läsa ./data/predictions.json");
-  return r.json();
-});
+const [data, populationData] = await Promise.all([
+  fetch("./data/predictions.json").then((r) => {
+    if (!r.ok) throw new Error("Kunde inte läsa ./data/predictions.json");
+    return r.json();
+  }),
+  fetch("./data/population_report.json")
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null),
+]);
 
 const els = {
+  tabIndivid: document.getElementById("tabIndivid"),
+  tabPopulation: document.getElementById("tabPopulation"),
+  viewIndivid: document.getElementById("viewIndivid"),
+  viewPopulation: document.getElementById("viewPopulation"),
+
   workplace: document.getElementById("workplace"),
   specialist: document.getElementById("specialist"),
   phd: document.getElementById("phd"),
@@ -16,6 +26,20 @@ const els = {
   actualVsMedian: document.getElementById("actualVsMedian"),
   supportInfo: document.getElementById("supportInfo"),
   chart: document.getElementById("chart"),
+
+  popNNational: document.getElementById("popNNational"),
+  popNPopulation: document.getElementById("popNPopulation"),
+  popMedianPred: document.getElementById("popMedianPred"),
+  popMedianGap: document.getElementById("popMedianGap"),
+  popMeta: document.getElementById("popMeta"),
+  popUnseen: document.getElementById("popUnseen"),
+  popChartDecile: document.getElementById("popChartDecile"),
+  popChartEcdf: document.getElementById("popChartEcdf"),
+  popChartScatter: document.getElementById("popChartScatter"),
+  popChartGap: document.getElementById("popChartGap"),
+  popTopPeople: document.getElementById("popTopPeople"),
+  popBottomPeople: document.getElementById("popBottomPeople"),
+  popGroupRankings: document.getElementById("popGroupRankings"),
 };
 
 const profiles = data.profiles;
@@ -109,6 +133,11 @@ function sek(v) {
   return `${Math.round(v).toLocaleString("sv-SE")} kr/mån`;
 }
 
+function sekSimple(v) {
+  if (!Number.isFinite(v)) return "-";
+  return `${Math.round(v).toLocaleString("sv-SE")} kr`;
+}
+
 function fmtSignedSek(v) {
   const rounded = Math.round(v);
   const abs = Math.abs(rounded).toLocaleString("sv-SE");
@@ -166,6 +195,26 @@ function supportFillColor(t) {
   const [r, g, b] = interpRgb(t);
   const alpha = 0.08 + t * (0.30 - 0.08);
   return `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+}
+
+function extraQuantileTraces(profile, x) {
+  const extras = profile.curve.extra_quantiles;
+  if (!extras || typeof extras !== "object") return [];
+  const keys = Object.keys(extras).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
+  const traces = [];
+  for (const key of keys) {
+    const y = extras[key];
+    if (!Array.isArray(y) || y.length !== x.length) continue;
+    traces.push({
+      x,
+      y,
+      mode: "lines",
+      name: `${key.slice(1)}e percentil`,
+      line: { width: 1.25, color: "rgba(31,42,68,0.45)", dash: "dot" },
+      visible: "legendonly",
+    });
+  }
+  return traces;
 }
 
 function buildBandSegmentTraces(x, q10, q90, tNorm) {
@@ -254,7 +303,7 @@ function xAxisPadding() {
   return Math.max(0.4, span * 0.015);
 }
 
-function updateView() {
+function updateIndividualView() {
   const profile = selectedProfile();
   if (!profile) return;
 
@@ -344,6 +393,7 @@ function updateView() {
       line: { width: 4, color: "rgba(107,174,214,1.0)" },
       name: "50e percentil (median)",
     },
+    ...extraQuantileTraces(profile, x),
     {
       x,
       y: uLines.highOuter,
@@ -408,7 +458,7 @@ function updateView() {
 
   const layout = {
     title: {
-      text: `Predikterat lönespann`,
+      text: "Predikterat lönespann",
       x: 0.01,
       xanchor: "left",
       font: { family: "Space Grotesk, sans-serif", size: 28 },
@@ -438,6 +488,263 @@ function updateView() {
   Plotly.react(els.chart, traces, layout, { responsive: true, displaylogo: false });
 }
 
+function populationPlotLayout(title, yTitle, xTitle = "") {
+  return {
+    title: { text: title, x: 0.02, xanchor: "left", font: { family: "Space Grotesk, sans-serif", size: 18 } },
+    margin: { l: 62, r: 24, t: 54, b: 58 },
+    paper_bgcolor: "transparent",
+    plot_bgcolor: "rgba(255,255,255,0.75)",
+    xaxis: { title: xTitle, showgrid: true, gridcolor: "rgba(0,0,0,0.08)", zeroline: false },
+    yaxis: { title: yTitle, showgrid: true, gridcolor: "rgba(0,0,0,0.08)", zeroline: false },
+    showlegend: false,
+  };
+}
+
+function renderPopulationView() {
+  if (!populationData) {
+    els.popMeta.textContent = "Kunde inte läsa ./data/population_report.json. Kör export-skriptet för att generera populationsunderlag.";
+    return;
+  }
+
+  const summary = populationData.summary;
+  const meta = populationData.meta;
+  const bins = populationData.gap_bins || populationData.percentile_bins || populationData.deciles;
+  const scatter = populationData.scatter;
+  const gaps = populationData.gaps;
+  const individuals = Array.isArray(populationData.individuals) ? populationData.individuals : [];
+  const groupRankings = populationData.group_rankings || {};
+
+  els.popNNational.textContent = `${summary.n_national}`;
+  els.popNPopulation.textContent = `${summary.n_population}`;
+  els.popMedianPred.textContent = sekSimple(summary.median_pred_q50);
+  els.popMedianGap.textContent = sekSimple(summary.median_gap_actual_minus_pred50);
+  els.popMeta.textContent = `Rollfilter: ${meta.role}. Källor: nationellt (${meta.national_source}), population (${meta.cohort_source}).`;
+  els.popUnseen.textContent = `Okända kategorier i populationen: ${meta.unseen_categories_summary}.`;
+
+  const binCounts = bins.labels.map((label) => bins.counts[label] || 0);
+  const gapTickText = bins.labels.map((label) =>
+    label
+      .replace(" till ", "<br>till ")
+      .replace("-5000", "-5 000")
+      .replace("-2500", "-2 500")
+      .replace("+2500", "+2 500")
+      .replace("+5000", "+5 000")
+  );
+  Plotly.react(
+    els.popChartDecile,
+    [
+      {
+        x: bins.labels,
+        y: binCounts,
+        type: "bar",
+        name: "Antal personer",
+        marker: { color: "rgba(49,130,189,0.78)" },
+      },
+    ],
+    {
+      ...populationPlotLayout(
+        "Populationens lönegap mot predikterad median (q50)",
+        "Antal personer",
+        "Intervall för faktisk - predikterad q50 (kr/mån)"
+      ),
+      margin: { l: 62, r: 24, t: 54, b: 88 },
+      xaxis: {
+        title: { text: "Intervall för faktisk - predikterad q50 (kr/mån)", standoff: 10 },
+        tickmode: "array",
+        tickvals: bins.labels,
+        ticktext: gapTickText,
+        tickangle: 0,
+        showgrid: true,
+        gridcolor: "rgba(0,0,0,0.08)",
+        zeroline: false,
+        automargin: true,
+      },
+    },
+    { responsive: true, displaylogo: false }
+  );
+
+  const sortedByPct = [...individuals].sort((a, b) => a.pred_percentile - b.pred_percentile);
+  const personLabels = sortedByPct.map((p) => `Person ${p.id}`);
+  const personPercentiles = sortedByPct.map((p) => p.pred_percentile);
+  const groupMedianPercentile =
+    personPercentiles.length > 0
+      ? personPercentiles.slice().sort((a, b) => a - b)[Math.floor(personPercentiles.length / 2)]
+      : 50;
+
+  Plotly.react(
+    els.popChartEcdf,
+    [
+      {
+        x: personPercentiles,
+        y: personLabels,
+        mode: "markers",
+        name: "Person",
+        marker: { color: "rgba(49,130,189,0.95)", size: 9 },
+        customdata: sortedByPct.map((p) => [p.pred_q50, p.gap_actual_minus_pred50]),
+        hovertemplate:
+          "%{y}<br>Nationell percentil: %{x:.0f}<br>" +
+          "Pred q50: %{customdata[0]:,.0f} kr/mån<br>" +
+          "Gap (faktisk - q50): %{customdata[1]:,.0f} kr/mån<extra></extra>",
+      },
+    ],
+    {
+      ...populationPlotLayout(
+        "Individers nationella percentilrank (predikterad q50)",
+        "Person (sorterad)",
+        "Nationell percentil (0-100)"
+      ),
+      xaxis: {
+        title: "Nationell percentil (0-100)",
+        range: [0, 100],
+        showgrid: true,
+        gridcolor: "rgba(0,0,0,0.08)",
+        zeroline: false,
+      },
+      yaxis: {
+        title: "Person (sorterad)",
+        automargin: true,
+      },
+      shapes: [
+        {
+          type: "line",
+          x0: 50,
+          x1: 50,
+          y0: -0.5,
+          y1: Math.max(0, personLabels.length - 0.5),
+          line: { color: "rgba(140,140,140,0.85)", width: 2, dash: "dash" },
+        },
+        {
+          type: "line",
+          x0: groupMedianPercentile,
+          x1: groupMedianPercentile,
+          y0: -0.5,
+          y1: Math.max(0, personLabels.length - 0.5),
+          line: { color: "rgba(214,39,40,0.9)", width: 2 },
+        },
+      ],
+      annotations: [
+        {
+          x: 50,
+          y: 1.02,
+          xref: "x",
+          yref: "paper",
+          text: "Nationell median (50)",
+          showarrow: false,
+          font: { size: 11, color: "rgba(110,110,110,1)" },
+        },
+        {
+          x: groupMedianPercentile,
+          y: 1.08,
+          xref: "x",
+          yref: "paper",
+          text: `Gruppens medianpercentil (${Math.round(groupMedianPercentile)})`,
+          showarrow: false,
+          font: { size: 11, color: "rgba(214,39,40,1)" },
+        },
+      ],
+    },
+    { responsive: true, displaylogo: false }
+  );
+
+  Plotly.react(
+    els.popChartScatter,
+    [
+      {
+        x: scatter.national_years,
+        y: scatter.national_salary,
+        mode: "markers",
+        name: "Nationella löner",
+        marker: { color: "rgba(120,120,120,0.24)", size: 6 },
+      },
+      {
+        x: scatter.population_years,
+        y: scatter.population_salary,
+        mode: "markers",
+        name: "Populationens löner",
+        marker: { color: "rgba(49,130,189,0.95)", size: 9, line: { color: "white", width: 1 } },
+      },
+      {
+        x: scatter.trend_years,
+        y: scatter.trend_q50,
+        mode: "lines",
+        name: "Mediantrend (typisk profil)",
+        line: { color: "rgba(214,39,40,0.9)", width: 2 },
+      },
+    ],
+    populationPlotLayout("Faktisk lön mot erfarenhet", "Lön (kr/mån)", "Erfarenhet (år)"),
+    { responsive: true, displaylogo: false }
+  );
+
+  const gapTraces = Object.entries(gaps.groups).map(([label, vals]) => ({
+    y: vals,
+    name: label,
+    type: "box",
+    boxmean: true,
+    marker: { color: "rgba(49,130,189,0.85)" },
+  }));
+  Plotly.react(
+    els.popChartGap,
+    gapTraces,
+    populationPlotLayout(
+      `Avvikelse per delgrupp (${gaps.group_column})`,
+      "Faktisk - predikterad q50 (kr/mån)",
+      gaps.group_column
+    ),
+    { responsive: true, displaylogo: false }
+  );
+
+  const fmtPercentile = (v) => `${Math.round(v)}p`;
+  const fmtGap = (v) => `${v >= 0 ? "+" : ""}${Math.round(v).toLocaleString("sv-SE")} kr`;
+  const byHigh = [...individuals].sort((a, b) => b.pred_percentile - a.pred_percentile);
+  const byLow = [...individuals].sort((a, b) => a.pred_percentile - b.pred_percentile);
+  const top = byHigh.slice(0, 5);
+  const bottom = byLow.slice(0, 5);
+
+  els.popTopPeople.innerHTML = top
+    .map(
+      (p) =>
+        `<li>Person ${p.id}: ${fmtPercentile(p.pred_percentile)} (pred q50 ${sekSimple(
+          p.pred_q50
+        )}, avvikelse ${fmtGap(p.gap_actual_minus_pred50)})</li>`
+    )
+    .join("");
+  els.popBottomPeople.innerHTML = bottom
+    .map(
+      (p) =>
+        `<li>Person ${p.id}: ${fmtPercentile(p.pred_percentile)} (pred q50 ${sekSimple(
+          p.pred_q50
+        )}, avvikelse ${fmtGap(p.gap_actual_minus_pred50)})</li>`
+    )
+    .join("");
+
+  const rankingSections = Object.entries(groupRankings).map(([name, rows]) => {
+    const text = rows
+      .map(
+        (r) =>
+          `${r.group} (n=${r.n}): medianpercentil ${Math.round(r.median_percentile)}p, medianavvikelse ${fmtGap(
+            r.median_gap
+          )}`
+      )
+      .join("<br>");
+    return `<p><strong>${name}</strong><br>${text}</p>`;
+  });
+  els.popGroupRankings.innerHTML = rankingSections.join("");
+}
+
+function setTab(tab) {
+  const isIndivid = tab === "individ";
+  els.tabIndivid.classList.toggle("is-active", isIndivid);
+  els.tabPopulation.classList.toggle("is-active", !isIndivid);
+  els.viewIndivid.classList.toggle("is-active", isIndivid);
+  els.viewPopulation.classList.toggle("is-active", !isIndivid);
+
+  if (isIndivid) {
+    updateIndividualView();
+  } else {
+    renderPopulationView();
+  }
+}
+
 function init() {
   fillSelect(els.workplace, data.options.workplace);
   fillSelect(els.specialist, data.options.specialist);
@@ -453,17 +760,20 @@ function init() {
   els.years.value = String(data.default_profile.years);
 
   syncFilters();
-  updateView();
+  updateIndividualView();
 
   const onFilterChange = () => {
     syncFilters();
-    updateView();
+    updateIndividualView();
   };
   els.workplace.addEventListener("change", onFilterChange);
   els.specialist.addEventListener("change", onFilterChange);
   els.phd.addEventListener("change", onFilterChange);
-  els.years.addEventListener("input", updateView);
-  els.actualSalary.addEventListener("input", updateView);
+  els.years.addEventListener("input", updateIndividualView);
+  els.actualSalary.addEventListener("input", updateIndividualView);
+
+  els.tabIndivid.addEventListener("click", () => setTab("individ"));
+  els.tabPopulation.addEventListener("click", () => setTab("population"));
 }
 
 init();
