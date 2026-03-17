@@ -16,6 +16,7 @@ const POPULATION_SOURCES = {
   default: "./data/population_report.json",
 };
 const DISTRIBUTION_SOURCE = "./data/population_umea.json";
+const DISTRIBUTION_MAX_RAISE_PCT = 0.20;
 const GAP_BIN_LABELS = [
   "< -5000",
   "-5000 till -2500",
@@ -226,10 +227,15 @@ function gapBinCountsFromValues(gaps) {
   return counts;
 }
 
+function personIncreaseCap(person) {
+  const actual = Math.max(0, Number(person.actual_salary) || 0);
+  return actual * DISTRIBUTION_MAX_RAISE_PCT;
+}
+
 function requiredAmountForRatio(actuals, preds, ratio) {
   let total = 0;
   for (let i = 0; i < actuals.length; i += 1) {
-    total += Math.max(ratio * preds[i] - actuals[i], 0);
+    total += clamp(Math.max(ratio * preds[i] - actuals[i], 0), 0, personIncreaseCap({ actual_salary: actuals[i] }));
   }
   return total;
 }
@@ -261,7 +267,7 @@ function optimalAllocationByPercent(people, total) {
 
   const targetRatio = high;
   return people.map((person, idx) =>
-    Math.max(targetRatio * preds[idx] - actuals[idx], 0)
+    clamp(Math.max(targetRatio * preds[idx] - actuals[idx], 0), 0, personIncreaseCap(person))
   );
 }
 
@@ -270,7 +276,11 @@ function rebalanceAllocations(baseIndividuals, total, lockedIndex = null, locked
   let remaining = Math.max(0, Number(total) || 0);
 
   if (lockedIndex !== null && lockedIndex >= 0 && lockedIndex < next.length) {
-    const fixed = clamp(Number(lockedValue) || 0, 0, remaining);
+    const fixed = clamp(
+      Number(lockedValue) || 0,
+      0,
+      Math.min(remaining, personIncreaseCap(baseIndividuals[lockedIndex]))
+    );
     next[lockedIndex] = fixed;
     remaining -= fixed;
   }
@@ -926,7 +936,6 @@ function buildDistributionState() {
 
 function renderDistributionSliders(people) {
   els.distSliderGrid.innerHTML = "";
-  const sliderMax = Math.max(0, Number(distributionTotal) || 0);
 
   people.forEach((person, idx) => {
     const card = document.createElement("div");
@@ -945,7 +954,7 @@ function renderDistributionSliders(people) {
     input.type = "range";
     input.dataset.index = String(idx);
     input.min = "0";
-    input.max = String(sliderMax);
+    input.max = String(Math.round(personIncreaseCap(person)));
     input.step = "100";
     input.value = String(Math.round(person.increase));
     input.addEventListener("input", (event) => {
@@ -971,6 +980,7 @@ function renderDistributionSliders(people) {
     meta.innerHTML =
       `Nu: ${sekSimple(person.adjusted_salary)}<br>` +
       `Pred q50: ${sekSimple(person.pred_q50)}<br>` +
+      `Max: ${sekSimple(personIncreaseCap(person))}<br>` +
       `Gap: ${person.adjusted_gap_pct.toFixed(1)}%`;
 
     card.appendChild(title);
@@ -988,7 +998,6 @@ function syncDistributionSliders(people) {
     return;
   }
 
-  const sliderMax = Math.max(0, Number(distributionTotal) || 0);
   cards.forEach((card, idx) => {
     const person = people[idx];
     const valueEl = card.querySelector(".distSliderValue");
@@ -996,13 +1005,14 @@ function syncDistributionSliders(people) {
     const meta = card.querySelector(".distSliderMeta");
     if (valueEl) valueEl.textContent = sekSimple(person.increase);
     if (input) {
-      input.max = String(sliderMax);
+      input.max = String(Math.round(personIncreaseCap(person)));
       input.value = String(Math.round(person.increase));
     }
     if (meta) {
       meta.innerHTML =
         `Nu: ${sekSimple(person.adjusted_salary)}<br>` +
         `Pred q50: ${sekSimple(person.pred_q50)}<br>` +
+        `Max: ${sekSimple(personIncreaseCap(person))}<br>` +
         `Gap: ${person.adjusted_gap_pct.toFixed(1)}%`;
     }
   });
@@ -1029,7 +1039,7 @@ function renderDistributionView(refreshSliders = true) {
   els.distTotalAssigned.textContent = sekSimple(totalAssigned);
   els.distMedianGap.textContent = sekSimple(medianOf(adjustedGaps));
   els.distMeta.textContent =
-    `Underlag: ${distributionBaseData.meta.cohort_source}. Gruppen ombalanseras automatiskt mot predikterad median (q50) i procent av varje persons predikterade lön, inom en fast total pott.`;
+    `Underlag: ${distributionBaseData.meta.cohort_source}. Gruppen ombalanseras automatiskt mot predikterad median (q50) i procent av varje persons predikterade lön, inom en fast total pott. Varje individ är begränsad till högst ${Math.round(DISTRIBUTION_MAX_RAISE_PCT * 100)}% löneökning.`;
 
   if (refreshSliders) {
     renderDistributionSliders(people);
