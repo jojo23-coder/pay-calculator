@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./styles.css?v=20260305c" />
+  <link rel="stylesheet" href="./styles.css?v=20260317j" />
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
@@ -15,6 +15,7 @@
     <section class="tabsBar">
       <button id="tabIndivid" class="tabBtn is-active" type="button">Individ</button>
       <button id="tabPopulation" class="tabBtn" type="button">Population</button>
+      <button id="tabDistribution" class="tabBtn" type="button">Fördela</button>
     </section>
 
     <section id="viewIndivid" class="tabView is-active">
@@ -169,8 +170,46 @@
         </section>
       </div>
     </section>
+
+    <section id="viewDistribution" class="tabView">
+      <div class="layout populationLayout">
+        <section class="panel popSummary">
+          <h1>Beslutsstöd för lönefördelning</h1>
+          <div class="popDatasetRow">
+            <label>
+              <span>Total pott att fördela (kr/mån)</span>
+              <input id="distTotal" type="number" min="0" step="100" value="78000" />
+            </label>
+          </div>
+          <div class="popSummaryGrid">
+            <div class="numbers popNumbers">
+              <div><strong>Antal personer</strong><span id="distNPopulation">-</span></div>
+              <div><strong>Kvar att fördela</strong><span id="distRemaining">-</span></div>
+            </div>
+            <div class="numbers popNumbers">
+              <div><strong>Total fördelning</strong><span id="distTotalAssigned">-</span></div>
+              <div><strong>Median avvikelse efter fördelning</strong><span id="distMedianGap">-</span></div>
+            </div>
+          </div>
+          <p id="distMeta" class="support"></p>
+        </section>
+
+        <section class="chartWrap populationCharts">
+          <div id="distChartGapBins" class="popChart"></div>
+          <div id="distChartDeviation" class="popChart"></div>
+        </section>
+
+        <section class="panel distControls">
+          <div class="distControlsHeader">
+            <h2>Justera fördelning per person</h2>
+            <p class="sub">Systemet startar med en fördelning som minimerar avvikelsen mot predikterad median i procent av varje persons predikterade q50. När du drar i en slider fördelas resten automatiskt på övriga personer.</p>
+          </div>
+          <div id="distSliderGrid" class="distSliderGrid"></div>
+        </section>
+      </div>
+    </section>
   </main>
 
-  <script type="module" src="./app.js?v=20260305c"></script>
+  <script type="module" src="./app.js?v=20260317j"></script>
 </body>
 </html>

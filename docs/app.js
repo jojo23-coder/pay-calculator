@@ -5,6 +5,9 @@ let byKey;
 let raw;
 let ACTIVE_ROLE;
 let currentPopulationKey = "random";
+let distributionBaseData = null;
+let distributionAllocations = [];
+let distributionTotal = 78000;
 const populationCache = new Map();
 
 const POPULATION_SOURCES = {
@@ -12,6 +15,15 @@ const POPULATION_SOURCES = {
   umea: "./data/population_umea.json",
   default: "./data/population_report.json",
 };
+const DISTRIBUTION_SOURCE = "./data/population_umea.json";
+const GAP_BIN_LABELS = [
+  "< -5000",
+  "-5000 till -2500",
+  "-2500 till 0",
+  "0 till +2500",
+  "+2500 till +5000",
+  "> +5000",
+];
 
 async function loadData() {
   const predictions = await fetch("./data/predictions.json").then((r) => {
@@ -19,6 +31,14 @@ async function loadData() {
     return r.json();
   });
   return { predictions };
+}
+
+async function loadDistributionBase() {
+  const response = await fetch(DISTRIBUTION_SOURCE);
+  if (!response.ok) {
+    throw new Error(`Kunde inte läsa ${DISTRIBUTION_SOURCE}`);
+  }
+  return response.json();
 }
 
 async function loadPopulationDataset(key) {
@@ -49,6 +69,8 @@ const els = {
   tabPopulation: document.getElementById("tabPopulation"),
   viewIndivid: document.getElementById("viewIndivid"),
   viewPopulation: document.getElementById("viewPopulation"),
+  viewDistribution: document.getElementById("viewDistribution"),
+  tabDistribution: document.getElementById("tabDistribution"),
 
   workplace: document.getElementById("workplace"),
   specialist: document.getElementById("specialist"),
@@ -77,6 +99,16 @@ const els = {
   popTopPeople: document.getElementById("popTopPeople"),
   popBottomPeople: document.getElementById("popBottomPeople"),
   popGroupRankings: document.getElementById("popGroupRankings"),
+
+  distTotal: document.getElementById("distTotal"),
+  distNPopulation: document.getElementById("distNPopulation"),
+  distRemaining: document.getElementById("distRemaining"),
+  distTotalAssigned: document.getElementById("distTotalAssigned"),
+  distMedianGap: document.getElementById("distMedianGap"),
+  distMeta: document.getElementById("distMeta"),
+  distSliderGrid: document.getElementById("distSliderGrid"),
+  distChartGapBins: document.getElementById("distChartGapBins"),
+  distChartDeviation: document.getElementById("distChartDeviation"),
 };
 
 function profileKey(role, workplace, specialist, phd) {
@@ -166,6 +198,92 @@ function sek(v) {
 function sekSimple(v) {
   if (!Number.isFinite(v)) return "-";
   return `${Math.round(v).toLocaleString("sv-SE")} kr`;
+}
+
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function medianOf(values) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+}
+
+function gapBinCountsFromValues(gaps) {
+  const counts = Object.fromEntries(GAP_BIN_LABELS.map((label) => [label, 0]));
+  for (const gap of gaps) {
+    if (gap < -5000) counts["< -5000"] += 1;
+    else if (gap < -2500) counts["-5000 till -2500"] += 1;
+    else if (gap < 0) counts["-2500 till 0"] += 1;
+    else if (gap <= 2500) counts["0 till +2500"] += 1;
+    else if (gap <= 5000) counts["+2500 till +5000"] += 1;
+    else counts["> +5000"] += 1;
+  }
+  return counts;
+}
+
+function requiredAmountForRatio(actuals, preds, ratio) {
+  let total = 0;
+  for (let i = 0; i < actuals.length; i += 1) {
+    total += Math.max(ratio * preds[i] - actuals[i], 0);
+  }
+  return total;
+}
+
+function optimalAllocationByPercent(people, total) {
+  const cleanTotal = Math.max(0, Number(total) || 0);
+  if (!people.length || cleanTotal === 0) return people.map(() => 0);
+
+  const actuals = people.map((person) => Math.max(0, Number(person.actual_salary) || 0));
+  const preds = people.map((person) => Math.max(1, Number(person.pred_q50) || 1));
+  const ratios = actuals.map((actual, idx) => actual / preds[idx]);
+
+  let low = Math.min(...ratios);
+  let high = Math.max(1, ...ratios);
+  while (requiredAmountForRatio(actuals, preds, high) < cleanTotal) {
+    high *= 1.25;
+    if (high > 5) break;
+  }
+
+  for (let i = 0; i < 80; i += 1) {
+    const mid = (low + high) / 2;
+    const needed = requiredAmountForRatio(actuals, preds, mid);
+    if (needed < cleanTotal) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+
+  const targetRatio = high;
+  return people.map((person, idx) =>
+    Math.max(targetRatio * preds[idx] - actuals[idx], 0)
+  );
+}
+
+function rebalanceAllocations(baseIndividuals, total, lockedIndex = null, lockedValue = null) {
+  const next = baseIndividuals.map(() => 0);
+  let remaining = Math.max(0, Number(total) || 0);
+
+  if (lockedIndex !== null && lockedIndex >= 0 && lockedIndex < next.length) {
+    const fixed = clamp(Number(lockedValue) || 0, 0, remaining);
+    next[lockedIndex] = fixed;
+    remaining -= fixed;
+  }
+
+  const freePeople = baseIndividuals.filter((_, idx) => idx !== lockedIndex);
+  const freeAlloc = optimalAllocationByPercent(freePeople, remaining);
+  let ptr = 0;
+  for (let i = 0; i < next.length; i += 1) {
+    if (i === lockedIndex) continue;
+    next[i] = freeAlloc[ptr] ?? 0;
+    ptr += 1;
+  }
+  return next;
 }
 
 function fmtSignedSek(v) {
@@ -782,6 +900,221 @@ function renderPopulationView() {
   els.popGroupRankings.innerHTML = rankingSections.join("");
 }
 
+function buildDistributionState() {
+  if (!distributionBaseData) return null;
+  const baseIndividuals = Array.isArray(distributionBaseData.individuals)
+    ? distributionBaseData.individuals
+    : [];
+  const allocations = distributionAllocations.length === baseIndividuals.length
+    ? distributionAllocations
+    : rebalanceAllocations(baseIndividuals, distributionTotal);
+
+  return baseIndividuals.map((person, idx) => {
+    const increase = allocations[idx] ?? 0;
+    const adjustedSalary = person.actual_salary + increase;
+    const gap = adjustedSalary - person.pred_q50;
+    const gapPct = person.pred_q50 > 0 ? (100 * gap) / person.pred_q50 : 0;
+    return {
+      ...person,
+      increase,
+      adjusted_salary: adjustedSalary,
+      adjusted_gap: gap,
+      adjusted_gap_pct: gapPct,
+    };
+  });
+}
+
+function renderDistributionSliders(people) {
+  els.distSliderGrid.innerHTML = "";
+  const sliderMax = Math.max(0, Number(distributionTotal) || 0);
+
+  people.forEach((person, idx) => {
+    const card = document.createElement("div");
+    card.className = "distSliderCard";
+
+    const title = document.createElement("div");
+    title.className = "distSliderTitle";
+    title.textContent = `Person ${person.id}`;
+
+    const value = document.createElement("div");
+    value.className = "distSliderValue";
+    value.textContent = sekSimple(person.increase);
+
+    const input = document.createElement("input");
+    input.className = "distSliderInput";
+    input.type = "range";
+    input.dataset.index = String(idx);
+    input.min = "0";
+    input.max = String(sliderMax);
+    input.step = "100";
+    input.value = String(Math.round(person.increase));
+    input.addEventListener("input", (event) => {
+      const nextValue = Number(event.target.value);
+      distributionAllocations = rebalanceAllocations(
+        distributionBaseData.individuals,
+        distributionTotal,
+        idx,
+        nextValue
+      );
+      renderDistributionView(false);
+    });
+    input.addEventListener("change", () => {
+      renderDistributionView(true);
+    });
+
+    const track = document.createElement("div");
+    track.className = "distSliderTrack";
+    track.appendChild(input);
+
+    const meta = document.createElement("div");
+    meta.className = "distSliderMeta";
+    meta.innerHTML =
+      `Nu: ${sekSimple(person.adjusted_salary)}<br>` +
+      `Pred q50: ${sekSimple(person.pred_q50)}<br>` +
+      `Gap: ${person.adjusted_gap_pct.toFixed(1)}%`;
+
+    card.appendChild(title);
+    card.appendChild(value);
+    card.appendChild(track);
+    card.appendChild(meta);
+    els.distSliderGrid.appendChild(card);
+  });
+}
+
+function syncDistributionSliders(people) {
+  const cards = els.distSliderGrid.querySelectorAll(".distSliderCard");
+  if (cards.length !== people.length) {
+    renderDistributionSliders(people);
+    return;
+  }
+
+  const sliderMax = Math.max(0, Number(distributionTotal) || 0);
+  cards.forEach((card, idx) => {
+    const person = people[idx];
+    const valueEl = card.querySelector(".distSliderValue");
+    const input = card.querySelector(".distSliderInput");
+    const meta = card.querySelector(".distSliderMeta");
+    if (valueEl) valueEl.textContent = sekSimple(person.increase);
+    if (input) {
+      input.max = String(sliderMax);
+      input.value = String(Math.round(person.increase));
+    }
+    if (meta) {
+      meta.innerHTML =
+        `Nu: ${sekSimple(person.adjusted_salary)}<br>` +
+        `Pred q50: ${sekSimple(person.pred_q50)}<br>` +
+        `Gap: ${person.adjusted_gap_pct.toFixed(1)}%`;
+    }
+  });
+}
+
+function renderDistributionView(refreshSliders = true) {
+  if (!distributionBaseData) {
+    els.distMeta.textContent = "Kunde inte läsa Umea-underlaget för fördelning.";
+    return;
+  }
+
+  const people = buildDistributionState();
+  if (!people) return;
+  distributionAllocations = people.map((person) => person.increase);
+
+  const totalAssigned = distributionAllocations.reduce((acc, v) => acc + v, 0);
+  const remaining = Math.max(0, distributionTotal - totalAssigned);
+  const adjustedGaps = people.map((person) => person.adjusted_gap);
+  const adjustedGapPct = people.map((person) => person.adjusted_gap_pct);
+  const gapCounts = gapBinCountsFromValues(adjustedGaps);
+
+  els.distNPopulation.textContent = `${people.length}`;
+  els.distRemaining.textContent = sekSimple(remaining);
+  els.distTotalAssigned.textContent = sekSimple(totalAssigned);
+  els.distMedianGap.textContent = sekSimple(medianOf(adjustedGaps));
+  els.distMeta.textContent =
+    `Underlag: ${distributionBaseData.meta.cohort_source}. Gruppen ombalanseras automatiskt mot predikterad median (q50) i procent av varje persons predikterade lön, inom en fast total pott.`;
+
+  if (refreshSliders) {
+    renderDistributionSliders(people);
+  } else {
+    syncDistributionSliders(people);
+  }
+
+  const gapTickText = GAP_BIN_LABELS.map((label) =>
+    label
+      .replace(" till ", "<br>till ")
+      .replace("-5000", "-5 000")
+      .replace("-2500", "-2 500")
+      .replace("+2500", "+2 500")
+      .replace("+5000", "+5 000")
+  );
+
+  Plotly.react(
+    els.distChartGapBins,
+    [
+      {
+        x: GAP_BIN_LABELS,
+        y: GAP_BIN_LABELS.map((label) => gapCounts[label]),
+        type: "bar",
+        marker: { color: "rgba(49,130,189,0.78)" },
+      },
+    ],
+    {
+      ...populationPlotLayout(
+        "Lönegap efter fördelning",
+        "Antal personer",
+        "Intervall för faktisk - predikterad q50 (kr/mån)"
+      ),
+      margin: { l: 62, r: 24, t: 54, b: 88 },
+      xaxis: {
+        title: { text: "Intervall för faktisk - predikterad q50 (kr/mån)", standoff: 10 },
+        tickmode: "array",
+        tickvals: GAP_BIN_LABELS,
+        ticktext: gapTickText,
+        tickangle: 0,
+        showgrid: true,
+        gridcolor: "rgba(0,0,0,0.08)",
+        zeroline: false,
+        automargin: true,
+      },
+    },
+    { responsive: true, displaylogo: false }
+  );
+
+  Plotly.react(
+    els.distChartDeviation,
+    [
+      {
+        x: people.map((p) => p.years),
+        y: adjustedGapPct,
+        mode: "markers",
+        marker: { color: "rgba(49,130,189,0.9)", size: 9, line: { color: "#fff", width: 1 } },
+        text: people.map((p) => `Person ${p.id}`),
+        customdata: people.map((p) => [p.adjusted_gap, p.pred_q50, p.adjusted_gap_pct]),
+        hovertemplate:
+          "%{text}<br>Erfarenhet: %{x:.1f} år<br>" +
+          "Avvikelse: %{customdata[2]:.1f}%<br>" +
+          "Gap efter fördelning: %{customdata[0]:,.0f} kr/mån<br>" +
+          "Pred q50: %{customdata[1]:,.0f} kr/mån<extra></extra>",
+      },
+    ],
+    {
+      ...populationPlotLayout(
+        "Avvikelse mot predikterad median (%) efter fördelning",
+        "Avvikelse i % av predikterad q50",
+        "Erfarenhet (år)"
+      ),
+      yaxis: {
+        title: "Avvikelse i % av predikterad q50",
+        ticksuffix: "%",
+        showgrid: true,
+        gridcolor: "rgba(0,0,0,0.08)",
+        zeroline: true,
+        zerolinecolor: "rgba(214,39,40,0.9)",
+        zerolinewidth: 2,
+      },
+    },
+    { responsive: true, displaylogo: false }
+  );
+}
+
 async function switchPopulationDataset(key) {
   els.popMeta.textContent = "Laddar population...";
   try {
@@ -797,27 +1130,39 @@ async function switchPopulationDataset(key) {
 
 function setTab(tab) {
   const isIndivid = tab === "individ";
+  const isPopulation = tab === "population";
+  const isDistribution = tab === "distribution";
   els.tabIndivid.classList.toggle("is-active", isIndivid);
-  els.tabPopulation.classList.toggle("is-active", !isIndivid);
+  els.tabPopulation.classList.toggle("is-active", isPopulation);
+  els.tabDistribution.classList.toggle("is-active", isDistribution);
   els.viewIndivid.classList.toggle("is-active", isIndivid);
-  els.viewPopulation.classList.toggle("is-active", !isIndivid);
+  els.viewPopulation.classList.toggle("is-active", isPopulation);
+  els.viewDistribution.classList.toggle("is-active", isDistribution);
 
   if (isIndivid) {
     updateIndividualView();
-  } else {
+  } else if (isPopulation) {
     void switchPopulationDataset(els.popDataset.value || currentPopulationKey);
+  } else if (isDistribution) {
+    renderDistributionView();
   }
 }
 
 async function init() {
   const loaded = await loadData();
   data = loaded.predictions;
+  distributionBaseData = await loadDistributionBase();
   profiles = data.profiles;
   byKey = new Map(
     profiles.map((p) => [profileKey(p.role, p.workplace, p.specialist, p.phd), p])
   );
   raw = data.raw_data;
   ACTIVE_ROLE = data.default_profile.role;
+  distributionTotal = Number(els.distTotal.value) || 78000;
+  distributionAllocations = rebalanceAllocations(
+    distributionBaseData.individuals || [],
+    distributionTotal
+  );
 
   fillSelect(els.workplace, data.options.workplace);
   fillSelect(els.specialist, data.options.specialist);
@@ -847,9 +1192,20 @@ async function init() {
 
   els.tabIndivid.addEventListener("click", () => setTab("individ"));
   els.tabPopulation.addEventListener("click", () => setTab("population"));
+  els.tabDistribution.addEventListener("click", () => setTab("distribution"));
   els.popDataset.addEventListener("change", () => {
     if (els.viewPopulation.classList.contains("is-active")) {
       void switchPopulationDataset(els.popDataset.value || "random");
+    }
+  });
+  els.distTotal.addEventListener("input", () => {
+    distributionTotal = Math.max(0, Number(els.distTotal.value) || 0);
+    distributionAllocations = rebalanceAllocations(
+      distributionBaseData.individuals || [],
+      distributionTotal
+    );
+    if (els.viewDistribution.classList.contains("is-active")) {
+      renderDistributionView(true);
     }
   });
 }
@@ -858,4 +1214,8 @@ init().catch((err) => {
   console.error(err);
   els.supportInfo.textContent =
     "Kunde inte ladda data till sidan. Kontrollera att JSON-filerna finns i docs/data och ladda om sidan.";
+  if (els.distMeta) {
+    els.distMeta.textContent =
+      "Kunde inte ladda underlaget for fordelningsvyn. Kontrollera JSON-filerna i docs/data.";
+  }
 });
