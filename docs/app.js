@@ -271,29 +271,68 @@ function optimalAllocationByPercent(people, total) {
   );
 }
 
-function rebalanceAllocations(baseIndividuals, total, lockedIndex = null, lockedValue = null) {
-  const next = baseIndividuals.map(() => 0);
-  let remaining = Math.max(0, Number(total) || 0);
+function rebalanceAllocations(baseIndividuals, total) {
+  return optimalAllocationByPercent(baseIndividuals, total);
+}
 
-  if (lockedIndex !== null && lockedIndex >= 0 && lockedIndex < next.length) {
-    const fixed = clamp(
-      Number(lockedValue) || 0,
-      0,
-      Math.min(remaining, personIncreaseCap(baseIndividuals[lockedIndex]))
-    );
-    next[lockedIndex] = fixed;
-    remaining -= fixed;
+function redistributeDeltaEvenly(baseIndividuals, currentAllocations, changedIndex, requestedValue, total) {
+  const current = currentAllocations.length === baseIndividuals.length
+    ? [...currentAllocations]
+    : rebalanceAllocations(baseIndividuals, total);
+  if (changedIndex < 0 || changedIndex >= current.length) return current;
+
+  const cap = personIncreaseCap(baseIndividuals[changedIndex]);
+  const target = clamp(Number(requestedValue) || 0, 0, cap);
+  let delta = target - current[changedIndex];
+  current[changedIndex] = target;
+
+  // Keep the total fixed by spreading the opposite delta across all other sliders.
+  while (Math.abs(delta) > 0.5) {
+    const adjustable = current
+      .map((value, idx) => ({ idx, value, cap: personIncreaseCap(baseIndividuals[idx]) }))
+      .filter((item) => item.idx !== changedIndex)
+      .filter((item) => (delta > 0 ? item.value > 0.5 : item.value < item.cap - 0.5));
+
+    if (!adjustable.length) {
+      current[changedIndex] -= delta;
+      break;
+    }
+
+    const share = delta / adjustable.length;
+    let leftover = 0;
+    for (const item of adjustable) {
+      if (delta > 0) {
+        const reduction = Math.min(item.value, share);
+        current[item.idx] -= reduction;
+        leftover += share - reduction;
+      } else {
+        const increaseRoom = item.cap - item.value;
+        const increase = Math.min(increaseRoom, -share);
+        current[item.idx] += increase;
+        leftover += (-share) - increase;
+      }
+    }
+    delta = delta > 0 ? leftover : -leftover;
   }
 
-  const freePeople = baseIndividuals.filter((_, idx) => idx !== lockedIndex);
-  const freeAlloc = optimalAllocationByPercent(freePeople, remaining);
-  let ptr = 0;
-  for (let i = 0; i < next.length; i += 1) {
-    if (i === lockedIndex) continue;
-    next[i] = freeAlloc[ptr] ?? 0;
-    ptr += 1;
+  const sum = current.reduce((acc, value) => acc + value, 0);
+  const drift = (Number(total) || 0) - sum;
+  if (Math.abs(drift) > 0.5) {
+    const adjustables = current
+      .map((value, idx) => ({ idx, value, cap: personIncreaseCap(baseIndividuals[idx]) }))
+      .filter((item) => item.idx !== changedIndex)
+      .filter((item) => (drift > 0 ? item.value < item.cap - 0.5 : item.value > 0.5));
+    if (adjustables.length) {
+      const share = drift / adjustables.length;
+      for (const item of adjustables) {
+        current[item.idx] = clamp(current[item.idx] + share, 0, item.cap);
+      }
+    } else {
+      current[changedIndex] = clamp(current[changedIndex] + drift, 0, cap);
+    }
   }
-  return next;
+
+  return current.map((value) => Math.max(0, value));
 }
 
 function fmtSignedSek(v) {
@@ -959,11 +998,12 @@ function renderDistributionSliders(people) {
     input.value = String(Math.round(person.increase));
     input.addEventListener("input", (event) => {
       const nextValue = Number(event.target.value);
-      distributionAllocations = rebalanceAllocations(
+      distributionAllocations = redistributeDeltaEvenly(
         distributionBaseData.individuals,
-        distributionTotal,
+        distributionAllocations,
         idx,
-        nextValue
+        nextValue,
+        distributionTotal
       );
       renderDistributionView(false);
     });
