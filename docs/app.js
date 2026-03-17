@@ -1018,10 +1018,9 @@ function renderDistributionSliders(people) {
     const meta = document.createElement("div");
     meta.className = "distSliderMeta";
     meta.innerHTML =
-      `Nu: ${sekSimple(person.adjusted_salary)}<br>` +
-      `Pred q50: ${sekSimple(person.pred_q50)}<br>` +
-      `Max: ${sekSimple(personIncreaseCap(person))}<br>` +
-      `Gap: ${person.adjusted_gap_pct.toFixed(1)}%`;
+      `Nuvarande:<br>${sekSimple(person.actual_salary)}<br>` +
+      `Efter justering:<br>${sekSimple(person.adjusted_salary)}<br>` +
+      `Lönegap efter:<br>${person.adjusted_gap_pct.toFixed(1)}%`;
 
     card.appendChild(title);
     card.appendChild(value);
@@ -1050,10 +1049,9 @@ function syncDistributionSliders(people) {
     }
     if (meta) {
       meta.innerHTML =
-        `Nu: ${sekSimple(person.adjusted_salary)}<br>` +
-        `Pred q50: ${sekSimple(person.pred_q50)}<br>` +
-        `Max: ${sekSimple(personIncreaseCap(person))}<br>` +
-        `Gap: ${person.adjusted_gap_pct.toFixed(1)}%`;
+        `Nuvarande:<br>${sekSimple(person.actual_salary)}<br>` +
+        `Efter justering:<br>${sekSimple(person.adjusted_salary)}<br>` +
+        `Lönegap efter:<br>${person.adjusted_gap_pct.toFixed(1)}%`;
     }
   });
 }
@@ -1068,8 +1066,9 @@ function renderDistributionView(refreshSliders = true) {
   if (!people) return;
   distributionAllocations = people.map((person) => person.increase);
 
-  const totalAssigned = distributionAllocations.reduce((acc, v) => acc + v, 0);
-  const remaining = Math.max(0, distributionTotal - totalAssigned);
+  const displayedIncreaseValues = people.map((person) => Math.round(person.increase));
+  const totalAssigned = displayedIncreaseValues.reduce((acc, v) => acc + v, 0);
+  const remaining = Math.max(0, Math.round(distributionTotal) - totalAssigned);
   const adjustedGaps = people.map((person) => person.adjusted_gap);
   const adjustedGapPct = people.map((person) => person.adjusted_gap_pct);
   const gapCounts = gapBinCountsFromValues(adjustedGaps);
